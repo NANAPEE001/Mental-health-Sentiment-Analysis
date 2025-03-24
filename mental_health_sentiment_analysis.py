@@ -15,7 +15,7 @@ from nltk.stem import WordNetLemmatizer
 import nltk
 nltk.download('wordnet')
 nltk.download('punkt')
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split,GridSearchCV, RandomizedSearchCV
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
@@ -23,6 +23,8 @@ from sklearn.multiclass import OneVsRestClassifier
 from sklearn.ensemble import VotingClassifier
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.pipeline import make_pipeline
+from sklearn.ensemble import RandomForestClassifier
+from xgboost import XGBClassifier
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score,roc_auc_score
 
 #read file
@@ -141,26 +143,110 @@ vectorizer = TfidfVectorizer(max_features=5000,stop_words='english',ngram_range=
 X_train_tfidf = vectorizer.fit_transform(X_train['statement'])
 X_test_tfidf = vectorizer.transform(X_test['statement'])
 
-#fit naive bayes
-# Naive Bayes Model with OneVsRestClassifier
+
+# Define parameter grids for GridSearchCV
+param_grid_nb = {
+    'estimator__alpha': [0.5, 1.0, 1.5]  # Smoothing parameter for Naive Bayes
+}
+
+param_grid_lr = {
+    'estimator__C': [0.1, 1.0, 10.0],  # Regularization strength for Logistic Regression
+    'estimator__solver': ['liblinear', 'saga'],  # Solvers to try for Logistic Regression
+    'estimator__max_iter': [500, 1000]  # Iteration limit
+}
+
+param_dist_xgb = {
+    'estimator__learning_rate': [0.1],
+    'estimator__n_estimators': [100],
+    'estimator__max_depth': [5],
+    'estimator__subsample': [0.8],
+    'estimator__colsample_bytree': [0.8]
+}
+
+param_dist_rf = {
+    'estimator__n_estimators': [50],  # Fewer trees
+    'estimator__max_depth': [10],
+    'estimator__min_samples_split': [2],
+    'estimator__min_samples_leaf': [1]
+}
+
+# param_grid_svm = {
+#     'estimator__C': [0.1, 1.0, 10.0],  # Regularization strength for SVM
+#     'estimator__kernel': ['linear'],  # Kernel type for SVM
+#     'estimator__gamma': ['scale', 'auto']  # Gamma parameter for SVM
+# }
+
+# Naive Bayes with GridSearchCV
 nb_model = OneVsRestClassifier(MultinomialNB())
-nb_model.fit(X_train_tfidf, y_train)
-y_pred_train = nb_model.predict(X_train_tfidf)
-print("Training Accuracy:", accuracy_score(y_train, y_pred_train))
-nb_pred = nb_model.predict(X_test_tfidf)
+grid_search_nb = GridSearchCV(nb_model, param_grid_nb, cv=3, n_jobs=-1, verbose=1)
+grid_search_nb.fit(X_train_tfidf, y_train)
+best_nb_model = grid_search_nb.best_estimator_
+y_pred_nb = best_nb_model.predict(X_test_tfidf)
 
-# Logistic Regression Model with OneVsRestClassifier
+# Logistic Regression with GridSearchCV
 lr_model = OneVsRestClassifier(LogisticRegression(max_iter=1000))
-lr_model.fit(X_train_tfidf, y_train)
-lr_pred = lr_model.predict(X_test_tfidf)
+grid_search_lr = GridSearchCV(lr_model, param_grid_lr, cv=3, n_jobs=-1, verbose=1)
+grid_search_lr.fit(X_train_tfidf, y_train)
+best_lr_model = grid_search_lr.best_estimator_
+y_pred_lr = best_lr_model.predict(X_test_tfidf)
 
-# SVM Model with OneVsRestClassifier
+"""
+# SVM with GridSearchCV
 svm_model = OneVsRestClassifier(SVC(kernel='linear'))
-svm_model.fit(X_train_tfidf, y_train)
-svm_pred = svm_model.predict(X_test_tfidf)
+grid_search_svm = GridSearchCV(svm_model, param_grid_svm, cv=3, n_jobs=-1, verbose=1)
+grid_search_svm.fit(X_train_tfidf, y_train)
+best_svm_model = grid_search_svm.best_estimator_
+y_pred_svm = best_svm_model.predict(X_test_tfidf) """
+
+# XGBoost with RandomizedSearchCV
+xgb_model = OneVsRestClassifier(XGBClassifier(use_label_encoder=False, eval_metric='mlogloss'))
+random_search_xgb = RandomizedSearchCV(xgb_model, param_distributions=param_dist_xgb, n_iter=10, cv=3, n_jobs=-1, verbose=1, random_state=42)
+random_search_xgb.fit(X_train_tfidf, y_train)
+best_xgb_model = random_search_xgb.best_estimator_
+y_pred_xgb = best_xgb_model.predict(X_test_tfidf)
+
+# Random Forest with RandomizedSearchCV
+rf_model = OneVsRestClassifier(RandomForestClassifier())
+random_search_rf = RandomizedSearchCV(rf_model, param_distributions=param_dist_rf, n_iter=10, cv=3, n_jobs=-1, verbose=1, random_state=42)
+random_search_rf.fit(X_train_tfidf, y_train)
+best_rf_model = random_search_rf.best_estimator_
+y_pred_rf = best_rf_model.predict(X_test_tfidf)
 
 # Evaluate models
-print("\nNaive Bayes - Accuracy:", accuracy_score(y_test, nb_pred))
-print("\nNaive Bayes- Area Under the Curve:", roc_auc_score(y_test, nb_pred))
-print("\nLogistic Regression - Accuracy:", accuracy_score(y_test, lr_pred))
-print("\nLogistic Regression- Area Under the Curve:",roc_auc_score(y_test, lr_pred))
+print("\nNaive Bayes - Accuracy:", accuracy_score(y_test, y_pred_nb))
+print("\nNaive Bayes- Area Under the Curve:", roc_auc_score(y_test, y_pred_nb))
+print("\nLogistic Regression - Accuracy:", accuracy_score(y_test, y_pred_lr))
+print("\nLogistic Regression- Area Under the Curve:",roc_auc_score(y_test, y_pred_lr))
+#print("\nSVM  - Accuracy:", accuracy_score(y_test, y_pred_lr))
+#print("\nSVM- Area Under the Curve:",roc_auc_score(y_test, y_pred_lr))
+print("\nXGBoost - Accuracy:", accuracy_score(y_test, y_pred_xgb))
+print("\nXGBoost- Area Under the Curve:",roc_auc_score(y_test, y_pred_xgb))
+print("\nRandom forest - Accuracy:", accuracy_score(y_test, y_pred_rf))
+print("\Random forest- Area Under the Curve:",roc_auc_score(y_test, y_pred_rf))
+
+#test
+import pickle
+
+pickle.dump(best_lr_model, open("mental_health_model.pkl", "wb"))
+pickle.dump(vectorizer, open("tfidf_vectorizer.pkl", "wb"))
+
+loaded_model = pickle.load(open("mental_health_model.pkl", "rb"))
+loaded_tfidf = pickle.load(open("tfidf_vectorizer.pkl", "rb"))
+
+# Define the labels based on the one-hot encoding columns
+labels = y_train.columns.tolist()  # or manually: labels = ['status_Sad', 'status_Happy', 'status_Angry']
+
+# Sample text for prediction
+sample_text = ["got to love the US it would be cheaper for my family to bury me than to have me treated"]
+sample_tfidf = loaded_tfidf.transform(sample_text)
+
+# Make a prediction using the loaded model
+prediction = loaded_model.predict(sample_tfidf)
+
+# Get the index of the class with the highest probability
+predicted_index = np.argmax(prediction, axis=1)[0]  # Get the index of the predicted class
+
+# Map the index to the label
+predicted_status = labels[predicted_index]
+
+print("Predicted Status:", predicted_status)
