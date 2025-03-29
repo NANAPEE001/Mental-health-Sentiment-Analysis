@@ -26,6 +26,7 @@ from sklearn.pipeline import make_pipeline
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score,roc_auc_score
+from sklearn.preprocessing import LabelEncoder
 
 #read file
 df = pd.read_csv(r"C:\Users\NANA\Downloads\Combined Data.csv")
@@ -128,13 +129,16 @@ df_encoded = pd.get_dummies(df, columns=['status'], prefix='status')
 #df.columns
 df_encoded = df_encoded.drop(['statement_length'],axis =1)
 #defining dependent and independent variables
-
 X = df_encoded.drop(columns=[col for col in df_encoded.columns if col.startswith('status_')])
 
 # Dependent variable (y): All the 'status_*' columns
 y = df_encoded[[col for col in df_encoded.columns if col.startswith('status_')]]
+# For Naive Bayes, we will use LabelEncoder for target variable
+label_encoder = LabelEncoder()
+y_nb = label_encoder.fit_transform(df['status'])
 
 # train test split
+X_train, X_test, y_train_nb, y_test_nb = train_test_split(X, y_nb, test_size=0.2, random_state=42)  # Naive Bayes
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
 
@@ -145,8 +149,16 @@ X_test_tfidf = vectorizer.transform(X_test['statement'])
 
 
 # Define parameter grids for GridSearchCV
+from sklearn.pipeline import Pipeline
+
+# pipeline for Naive Bayes with TfidfVectorizer
+pipeline_nb = Pipeline([
+    ('vectorizer', TfidfVectorizer(max_features=5000, stop_words='english', ngram_range=(1, 2))),
+    ('nb', MultinomialNB())
+])
+
 param_grid_nb = {
-    'estimator__alpha': [0.5, 1.0, 1.5]  # Smoothing parameter for Naive Bayes
+    'nb__alpha': [0.5, 1.0, 1.5]  # Smoothing parameter for Naive Bayes
 }
 
 param_grid_lr = {
@@ -177,11 +189,10 @@ param_dist_rf = {
 # }
 
 # Naive Bayes with GridSearchCV
-nb_model = OneVsRestClassifier(MultinomialNB())
-grid_search_nb = GridSearchCV(nb_model, param_grid_nb, cv=3, n_jobs=-1, verbose=1)
-grid_search_nb.fit(X_train_tfidf, y_train)
+grid_search_nb = GridSearchCV(pipeline_nb, param_grid_nb, cv=3, n_jobs=-1, verbose=1)
+grid_search_nb.fit(X_train['statement'], y_train_nb)  
 best_nb_model = grid_search_nb.best_estimator_
-y_pred_nb = best_nb_model.predict(X_test_tfidf)
+y_pred_nb = best_nb_model.predict(X_test['statement'])
 
 # Logistic Regression with GridSearchCV
 lr_model = OneVsRestClassifier(LogisticRegression(max_iter=1000))
@@ -213,8 +224,7 @@ best_rf_model = random_search_rf.best_estimator_
 y_pred_rf = best_rf_model.predict(X_test_tfidf)
 
 # Evaluate models
-print("\nNaive Bayes - Accuracy:", accuracy_score(y_test, y_pred_nb))
-print("\nNaive Bayes- Area Under the Curve:", roc_auc_score(y_test, y_pred_nb))
+print("\nNaive Bayes - Accuracy:", accuracy_score(y_test_nb, y_pred_nb))
 print("\nLogistic Regression - Accuracy:", accuracy_score(y_test, y_pred_lr))
 print("\nLogistic Regression- Area Under the Curve:",roc_auc_score(y_test, y_pred_lr))
 #print("\nSVM  - Accuracy:", accuracy_score(y_test, y_pred_lr))
