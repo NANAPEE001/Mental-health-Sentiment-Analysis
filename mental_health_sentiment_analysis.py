@@ -123,79 +123,92 @@ def preprocess_text(text):
     
     return text
 df['statement'] = df['statement'].astype(str).apply(preprocess_text)
-df = df.drop(['Unnamed: 0'],axis=1)
+df = df.drop(['Unnamed: 0','statement_length'],axis=1)
 #using one hot encoding on status column
-df_encoded = pd.get_dummies(df, columns=['status'], prefix='status')
+label_encoder = LabelEncoder()
+df['status']= label_encoder.fit_transform(df['status'])
+#df_encoded = pd.get_dummies(df, columns=['status'], prefix='status')
 #df.columns
-df_encoded = df_encoded.drop(['statement_length'],axis =1)
+#df_encoded = df_encoded.drop(['statement_length'],axis =1)
 #defining dependent and independent variables
-X = df_encoded.drop(columns=[col for col in df_encoded.columns if col.startswith('status_')])
+#X = df_encoded.drop(columns=[col for col in df_encoded.columns if col.startswith('status_')])
 
 # Dependent variable (y): All the 'status_*' columns
-y = df_encoded[[col for col in df_encoded.columns if col.startswith('status_')]]
+#y = df_encoded[[col for col in df_encoded.columns if col.startswith('status_')]]
+X = df['statement']
+y = df['status']
 # For Naive Bayes, we will use LabelEncoder for target variable
-label_encoder = LabelEncoder()
-y_nb = label_encoder.fit_transform(df['status'])
+
+#y_nb = label_encoder.fit_transform(df['status'])
 
 # train test split
-X_train, X_test, y_train_nb, y_test_nb = train_test_split(X, y_nb, test_size=0.2, random_state=42)  # Naive Bayes
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42) 
+#X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
 
 # TF-IDF Vectorizer for 'statement' text
 vectorizer = TfidfVectorizer(max_features=5000,stop_words='english',ngram_range=(1, 2))
-X_train_tfidf = vectorizer.fit_transform(X_train['statement'])
-X_test_tfidf = vectorizer.transform(X_test['statement'])
+X_train_tfidf = vectorizer.fit_transform(X_train)
+X_test_tfidf = vectorizer.transform(X_test)
 
 
 # Define parameter grids for GridSearchCV
 from sklearn.pipeline import Pipeline
 
 # pipeline for Naive Bayes with TfidfVectorizer
-pipeline_nb = Pipeline([
-    ('vectorizer', TfidfVectorizer(max_features=5000, stop_words='english', ngram_range=(1, 2))),
-    ('nb', MultinomialNB())
-])
+#pipeline_nb = Pipeline([
+#    ('vectorizer', TfidfVectorizer(max_features=5000, stop_words='english', ngram_range=(1, 2))),
+#    ('nb', MultinomialNB())
+#])
 
+#HYPERPARAMETERS
+
+#For naive bayes
 param_grid_nb = {
-    'nb__alpha': [0.5, 1.0, 1.5]  # Smoothing parameter for Naive Bayes
+    'alpha': [0.5, 1.0, 1.5]  # Smoothing parameter for Naive Bayes
 }
 
+# for logistic regression 
 param_grid_lr = {
-    'estimator__C': [0.1, 1.0, 10.0],  # Regularization strength for Logistic Regression
-    'estimator__solver': ['liblinear', 'saga'],  # Solvers to try for Logistic Regression
-    'estimator__max_iter': [500, 1000]  # Iteration limit
+    'C': [0.1, 1.0, 10.0],  
+    'solver': ['liblinear', 'saga'],  
+    'max_iter': [500, 1000]  
 }
 
+# For XGBoost
 param_dist_xgb = {
-    'estimator__learning_rate': [0.1],
-    'estimator__n_estimators': [100],
-    'estimator__max_depth': [5],
-    'estimator__subsample': [0.8],
-    'estimator__colsample_bytree': [0.8]
+    'learning_rate': [0.1],
+    'n_estimators': [100],
+    'max_depth': [5],
+    'subsample': [0.8],
+    'colsample_bytree': [0.8]
 }
 
+# For Random Forest
 param_dist_rf = {
-    'estimator__n_estimators': [50],  # Fewer trees
-    'estimator__max_depth': [10],
-    'estimator__min_samples_split': [2],
-    'estimator__min_samples_leaf': [1]
+    'n_estimators': [50],
+    'max_depth': [10],
+    'min_samples_split': [2],
+    'min_samples_leaf': [1]
 }
 
-# param_grid_svm = {
-#     'estimator__C': [0.1, 1.0, 10.0],  # Regularization strength for SVM
-#     'estimator__kernel': ['linear'],  # Kernel type for SVM
-#     'estimator__gamma': ['scale', 'auto']  # Gamma parameter for SVM
-# }
+"""
+param_grid_svm = {
+    'C': [0.1, 1.0, 10.0],           # Regularization strength
+    'kernel': ['linear', 'rbf'],     # Try both linear and RBF
+    'gamma': ['scale', 'auto']       # Kernel coefficient for ‘rbf’
+}
+""" 
 
 # Naive Bayes with GridSearchCV
-grid_search_nb = GridSearchCV(pipeline_nb, param_grid_nb, cv=3, n_jobs=-1, verbose=1)
-grid_search_nb.fit(X_train['statement'], y_train_nb)  
+naive_model = MultinomialNB()
+grid_search_nb = GridSearchCV(naive_model, param_grid_nb, cv=3, n_jobs=-1, verbose=1)
+grid_search_nb.fit(X_train_tfidf, y_train)  
 best_nb_model = grid_search_nb.best_estimator_
-y_pred_nb = best_nb_model.predict(X_test['statement'])
+y_pred_nb = best_nb_model.predict(X_test_tfidf)
 
 # Logistic Regression with GridSearchCV
-lr_model = OneVsRestClassifier(LogisticRegression(max_iter=1000))
+lr_model = LogisticRegression(max_iter=1000)
 grid_search_lr = GridSearchCV(lr_model, param_grid_lr, cv=3, n_jobs=-1, verbose=1)
 grid_search_lr.fit(X_train_tfidf, y_train)
 best_lr_model = grid_search_lr.best_estimator_
@@ -203,36 +216,37 @@ y_pred_lr = best_lr_model.predict(X_test_tfidf)
 
 """
 # SVM with GridSearchCV
-svm_model = OneVsRestClassifier(SVC(kernel='linear'))
+svm_model = SVC(kernel='linear')
 grid_search_svm = GridSearchCV(svm_model, param_grid_svm, cv=3, n_jobs=-1, verbose=1)
 grid_search_svm.fit(X_train_tfidf, y_train)
 best_svm_model = grid_search_svm.best_estimator_
 y_pred_svm = best_svm_model.predict(X_test_tfidf) """
 
 # XGBoost with RandomizedSearchCV
-xgb_model = OneVsRestClassifier(XGBClassifier(use_label_encoder=False, eval_metric='mlogloss'))
+xgb_model = XGBClassifier(use_label_encoder=False, eval_metric='mlogloss')
 random_search_xgb = RandomizedSearchCV(xgb_model, param_distributions=param_dist_xgb, n_iter=10, cv=3, n_jobs=-1, verbose=1, random_state=42)
 random_search_xgb.fit(X_train_tfidf, y_train)
 best_xgb_model = random_search_xgb.best_estimator_
 y_pred_xgb = best_xgb_model.predict(X_test_tfidf)
 
 # Random Forest with RandomizedSearchCV
-rf_model = OneVsRestClassifier(RandomForestClassifier())
+rf_model = RandomForestClassifier()
 random_search_rf = RandomizedSearchCV(rf_model, param_distributions=param_dist_rf, n_iter=10, cv=3, n_jobs=-1, verbose=1, random_state=42)
 random_search_rf.fit(X_train_tfidf, y_train)
 best_rf_model = random_search_rf.best_estimator_
 y_pred_rf = best_rf_model.predict(X_test_tfidf)
 
 # Evaluate models
-print("\nNaive Bayes - Accuracy:", accuracy_score(y_test_nb, y_pred_nb))
+print("\nNaive Bayes - Accuracy:", accuracy_score(y_test, y_pred_nb))
 print("\nLogistic Regression - Accuracy:", accuracy_score(y_test, y_pred_lr))
-print("\nLogistic Regression- Area Under the Curve:",roc_auc_score(y_test, y_pred_lr))
+print("\nXGBoost - Accuracy:", accuracy_score(y_test, y_pred_xgb))
+#print("\nLogistic Regression- Area Under the Curve:",roc_auc_score(y_test, y_pred_lr,multi_class='ovr', average='weighted'))
 #print("\nSVM  - Accuracy:", accuracy_score(y_test, y_pred_lr))
 #print("\nSVM- Area Under the Curve:",roc_auc_score(y_test, y_pred_lr))
-print("\nXGBoost - Accuracy:", accuracy_score(y_test, y_pred_xgb))
-print("\nXGBoost- Area Under the Curve:",roc_auc_score(y_test, y_pred_xgb))
-print("\nRandom forest - Accuracy:", accuracy_score(y_test, y_pred_rf))
-print("\Random forest- Area Under the Curve:",roc_auc_score(y_test, y_pred_rf))
+
+#print("\nXGBoost- Area Under the Curve:",roc_auc_score(y_test, y_pred_xgb))
+#print("\nRandom forest - Accuracy:", accuracy_score(y_test, y_pred_rf))
+#print("\Random forest- Area Under the Curve:",roc_auc_score(y_test, y_pred_rf))
 
 #test
 import pickle
